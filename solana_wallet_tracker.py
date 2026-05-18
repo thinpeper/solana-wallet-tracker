@@ -25,11 +25,16 @@ class SolanaWalletTracker:
     def get_top_tokens(self, limit=20):
         """Get top Solana tokens by 24h volume."""
         try:
-            response = requests.get(DEXSCREENER_TOKENS, headers=self.headers, timeout=15)
+            response = requests.get(
+                "https://api.dexscreener.com/latest/dex/search?q=solana",
+                headers=self.headers, timeout=15
+            )
             data = response.json()
             pairs = data.get("pairs", [])
-            pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
-            return pairs[:limit]
+            # Filter for Solana pairs
+            solana_pairs = [p for p in pairs if p.get("chainId") == "solana"]
+            solana_pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
+            return solana_pairs[:limit]
         except Exception as e:
             print(f"Error fetching top tokens: {e}")
             return []
@@ -37,10 +42,13 @@ class SolanaWalletTracker:
     def get_pumpfun_tokens(self, limit=20):
         """Get top pump.fun tokens by volume."""
         try:
-            response = requests.get(DEXSCREENER_PUMPFUN, headers=self.headers, timeout=15)
+            response = requests.get(
+                "https://api.dexscreener.com/latest/dex/search?q=pump",
+                headers=self.headers, timeout=15
+            )
             data = response.json()
             pairs = data.get("pairs", [])
-            pumpfun_pairs = [p for p in pairs if "pump" in p.get("baseChain", "").lower()]
+            pumpfun_pairs = [p for p in pairs if "pump" in p.get("dexId", "").lower()]
             pumpfun_pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
             return pumpfun_pairs[:limit]
         except Exception as e:
