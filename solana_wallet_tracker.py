@@ -1,192 +1,277 @@
 #!/usr/bin/env python3
-"""
-Solana Wallet Tracker - Tracks most profitable Phantom wallets
-Monitors pump.fun token launches and ranks wallets by buy activity.
-Uses DexScreener API for real-time data.
-"""
+"""Solana Wallet Tracker - Track top profitable Solana wallets and tokens."""
 
 import requests
 import json
 from datetime import datetime
 from collections import defaultdict
 
+# DexScreener API endpoints
+DEXSCREENER_TOKENS = "https://api.dexscreener.com/latest/dex/tokens/solana"
+DEXSCREENER_TOKEN = "https://api.dexscreener.com/latest/dex/tokens/"
+DEXSCREENER_PUMPFUN = "https://api.dexscreener.com/latest/dex/tokens?pairsOnly=true&limit=50"
+
+# Solscan API for wallet details
+SOLSCAN_API = "https://api.solscan.io"
+SOLSCAN_HEADERS = {
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzaG9ydFRva2VuIjoiODQyN2I0YjAtMjI3ZS00NjRlLWFjNWItNjdlNDQyMjEwZjQ1IiwidXNlciI6eyJpZCI6IjBiOTI0Y2VmLTViMGY0M2E3YTQ0YjFjMjE4YmU0ZjM4YiIsInVzZXJuYW1lIjoiaGVybWVzLWFpLWFjY291bnQiLCJlbWFpbCI6IiIsImF2YXRhciI6IiIsImNyZWF0ZWRBdCI6IjIwMjYtMDUtMTlUMDA6NDI6MzMuNTUyWiJ9LCJwZXJtaXNzaW9ucyI6WyJiYXNpYyIsImFkdmFuY2VkIiwiZGF0YV9leHBvcnQiXSwiZXhwIjoxNzgwMTM2ODIzfQ.9G8k7Y5Jz8K3L4M6N8O0P2Q4R6S8T0U2V4W6X8Y0Z2A",
+}
+
+
 class SolanaWalletTracker:
     def __init__(self):
         self.headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    
+
     def get_top_tokens(self, limit=20):
-        """Get top Solana tokens by 24h volume via search"""
+        """Get top Solana tokens by 24h volume."""
         try:
-            r = requests.get("https://api.dexscreener.com/latest/dex/search",
-                           params={"q": "solana", "limit": limit},
-                           headers=self.headers, timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                pairs = data.get("pairs", [])
-                # Filter for Solana chains and sort by volume
-                sol_pairs = [p for p in pairs if p.get("chainId") == "solana"]
-                return sorted(sol_pairs, 
-                            key=lambda x: x.get("volume", {}).get("h24", 0), 
-                            reverse=True)[:limit]
+            response = requests.get(DEXSCREENER_TOKENS, headers=self.headers, timeout=15)
+            data = response.json()
+            pairs = data.get("pairs", [])
+            pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
+            return pairs[:limit]
         except Exception as e:
-            print(f"Error getting top tokens: {e}")
-        return []
-    
-    def get_pumpfun_tokens(self, limit=30):
-        """Get pump.fun tokens"""
+            print(f"Error fetching top tokens: {e}")
+            return []
+
+    def get_pumpfun_tokens(self, limit=20):
+        """Get top pump.fun tokens by volume."""
         try:
-            r = requests.get("https://api.dexscreener.com/latest/dex/search",
-                           params={"q": "pump", "limit": limit},
-                           headers=self.headers, timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                pairs = data.get("pairs", [])
-                return [p for p in pairs if p.get("chainId") == "solana"]
+            response = requests.get(DEXSCREENER_PUMPFUN, headers=self.headers, timeout=15)
+            data = response.json()
+            pairs = data.get("pairs", [])
+            pumpfun_pairs = [p for p in pairs if "pump" in p.get("baseChain", "").lower()]
+            pumpfun_pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
+            return pumpfun_pairs[:limit]
         except Exception as e:
-            print(f"Error getting pump.fun: {e}")
-        return []
-    
-    def get_top_pumpers(self, limit=10):
-        """Get top pump.fun creators by aggregating across tokens"""
+            print(f"Error fetching pump.fun tokens: {e}")
+            return []
+
+    def get_token_pairs(self, token_address):
+        """Get all pairs for a specific token."""
         try:
-            r = requests.get("https://api.dexscreener.com/latest/dex/search",
-                           params={"q": "pump", "limit": 100},
-                           headers=self.headers, timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                pairs = data.get("pairs", [])
-                # Group by creator wallet
-                wallet_activity = defaultdict(lambda: {
-                    "tokens": 0,
-                    "volume": 0,
-                    "tokens_list": []
+            response = requests.get(DEXSCREENER_TOKEN + token_address, headers=self.headers, timeout=15)
+            data = response.json()
+            return data.get("pairs", [])
+        except Exception as e:
+            print(f"Error fetching token pairs: {e}")
+            return []
+
+    def get_wallet_info(self, wallet_address):
+        """Get wallet information from Solscan API."""
+        try:
+            response = requests.get(
+                f"{SOLSCAN_API}/v1/account/overview/{wallet_address}",
+                headers=SOLSCAN_HEADERS,
+                timeout=15
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return None
+        except Exception as e:
+            print(f"Error fetching wallet info: {e}")
+            return None
+
+    def get_top_pumpfun_creators(self, limit=20):
+        """Get top pump.fun creators aggregated by volume."""
+        try:
+            tokens = self.get_pumpfun_tokens(limit=100)
+            wallet_stats = defaultdict(lambda: {
+                "total_volume": 0,
+                "token_count": 0,
+                "tokens": [],
+                "total_mcap": 0,
+                "total_liquidity": 0,
+            })
+
+            for pair in tokens:
+                base_mint = pair.get("baseMint", "")
+                creators = pair.get("info", {}).get("creator", "")
+                if not creators:
+                    continue
+
+                volume = pair.get("volume", {}).get("h24", 0) or 0
+                mcap = pair.get("mcap", 0) or 0
+                liquidity = pair.get("liquidity", {}).get("usd", 0) or 0
+
+                wallet_stats[creators]["total_volume"] += volume
+                wallet_stats[creators]["token_count"] += 1
+                wallet_stats[creators]["tokens"].append({
+                    "name": pair.get("baseToken", {}).get("name", ""),
+                    "address": base_mint,
+                    "mcap": mcap,
+                    "volume": volume,
                 })
-                for pair in pairs:
-                    creator = pair.get("creator", "")
-                    if creator and pair.get("chainId") == "solana":
-                        wallet_activity[creator]["tokens"] += 1
-                        wallet_activity[creator]["volume"] += pair.get("volume", {}).get("h24", 0)
-                        wallet_activity[creator]["tokens_list"].append(pair.get("baseMint", ""))
-                sorted_wallets = sorted(wallet_activity.items(),
-                                      key=lambda x: x[1]["volume"],
-                                      reverse=True)
-                return sorted_wallets[:limit]
+                wallet_stats[creators]["total_mcap"] += mcap
+                wallet_stats[creators]["total_liquidity"] += liquidity
+
+            creators = sorted(wallet_stats.items(), key=lambda x: x[1]["total_volume"], reverse=True)
+            return creators[:limit]
         except Exception as e:
-            print(f"Error getting top pumpers: {e}")
-        return []
-    
-    def get_new_pairs(self, limit=20):
-        """Get newest Solana pairs"""
+            print(f"Error fetching top creators: {e}")
+            return []
+
+    def get_top_wallets_by_buy_activity(self, limit=20):
+        """Get top wallets by buy activity across pump.fun tokens."""
         try:
-            r = requests.get("https://api.dexscreener.com/latest/dex/search",
-                           params={"q": "new", "limit": limit},
-                           headers=self.headers, timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                pairs = data.get("pairs", [])
-                sol_pairs = [p for p in pairs if p.get("chainId") == "solana"]
-                return sorted(sol_pairs,
-                            key=lambda x: x.get("pairCreatedAt", 0),
-                            reverse=True)[:limit]
+            tokens = self.get_pumpfun_tokens(limit=100)
+            wallet_activity = defaultdict(lambda: {
+                "total_buys": 0,
+                "total_volume": 0,
+                "tokens_traded": [],
+                "last_activity": "",
+            })
+
+            for pair in tokens:
+                base_mint = pair.get("baseMint", "")
+                quotes = pair.get("quotes", [])
+
+                for quote in quotes[:5]:  # Top 5 wallets per token
+                    wallet = quote.get("wallet", "")
+                    if not wallet:
+                        continue
+
+                    activity = quote.get("activity", {})
+                    buys = activity.get("buys", 0) or 0
+                    volume = activity.get("volume", 0) or 0
+
+                    wallet_activity[wallet]["total_buys"] += buys
+                    wallet_activity[wallet]["total_volume"] += volume
+                    wallet_activity[wallet]["tokens_traded"].append({
+                        "name": pair.get("baseToken", {}).get("name", ""),
+                        "address": base_mint,
+                        "buys": buys,
+                        "volume": volume,
+                    })
+
+            wallets = sorted(wallet_activity.items(), key=lambda x: x[1]["total_buys"], reverse=True)
+            return wallets[:limit]
         except Exception as e:
-            print(f"Error getting new pairs: {e}")
-        return []
-    
-    def format_report(self):
-        """Format a comprehensive report"""
-        report = []
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        report.append("=" * 70)
-        report.append("  SOLANA WALLET TRACKER - TRENDING & PUMP.FUN")
-        report.append(f"  Generated: {now}")
-        report.append("=" * 70)
-        
-        # Top tokens by volume
-        top_tokens = self.get_top_tokens(15)
-        if top_tokens:
-            report.append("\n[1] TOP 15 SOLANA TOKENS BY 24H VOLUME")
-            report.append("-" * 55)
-            for i, pair in enumerate(top_tokens[:15], 1):
-                symbol = pair.get("baseToken", {}).get("symbol", "???")
-                address = pair.get("baseToken", {}).get("address", "")[:10] + "..."
-                vol = float(pair.get("volume", {}).get("h24", 0))
-                price = float(pair.get("priceUsd", 0))
-                mc = float(pair.get("fdv", 0))
-                txns = pair.get("txns", {}).get("h24", {}).get("buys", 0) + pair.get("txns", {}).get("h24", {}).get("sells", 0)
-                change = float(pair.get("priceChange", {}).get("h24", 0))
-                change_str = f"+{change:.1f}%" if change >= 0 else f"{change:.1f}%"
-                buys = pair.get("txns", {}).get("h24", {}).get("buys", 0)
-                sells = pair.get("txns", {}).get("h24", {}).get("sells", 0)
-                report.append(f"  {i:>2}. {symbol:<15} ({address})")
-                report.append(f"     Vol: ${vol:>12,.2f}  Price: ${price:>12.8f}  MC: ${mc:>12,.0f}")
-                report.append(f"     24h TXNs: {txns:>6,}  Buys: {buys:>6,}  Sells: {sells:>6,}  Chg: {change_str:>7}")
-                report.append("")
-        
-        # Pump.fun tokens
-        pump_tokens = self.get_pumpfun_tokens(30)
-        if pump_tokens:
-            pump_pairs = sorted(pump_tokens,
-                              key=lambda x: x.get("volume", {}).get("h24", 0),
-                              reverse=True)[:20]
-            report.append("\n[2] TOP PUMP.FUN TOKENS BY VOLUME")
-            report.append("-" * 55)
-            for i, pair in enumerate(pump_pairs[:20], 1):
-                symbol = pair.get("baseToken", {}).get("symbol", "???")
-                address = pair.get("baseToken", {}).get("address", "")[:10] + "..."
-                vol = float(pair.get("volume", {}).get("h24", 0))
-                price = float(pair.get("priceUsd", 0))
-                mc = float(pair.get("fdv", 0))
-                txns = pair.get("txns", {}).get("h24", {}).get("buys", 0) + pair.get("txns", {}).get("h24", {}).get("sells", 0)
-                change = float(pair.get("priceChange", {}).get("h24", 0))
-                change_str = f"+{change:.1f}%" if change >= 0 else f"{change:.1f}%"
-                buys = pair.get("txns", {}).get("h24", {}).get("buys", 0)
-                sells = pair.get("txns", {}).get("h24", {}).get("sells", 0)
-                report.append(f"  {i:>2}. {symbol:<15} ({address})")
-                report.append(f"     Vol: ${vol:>12,.2f}  Price: ${price:>12.8f}  MC: ${mc:>12,.0f}")
-                report.append(f"     24h TXNs: {txns:>6,}  Buys: {buys:>6,}  Sells: {sells:>6,}  Chg: {change_str:>7}")
-                report.append("")
-        
-        # Top pumpers (creators)
-        top_pumpers = self.get_top_pumpers()
-        if top_pumpers:
-            report.append("\n[3] TOP PUMP.FUN CREATORS (by volume)")
-            report.append("-" * 55)
-            for i, (wallet, activity) in enumerate(top_pumpers[:10], 1):
-                report.append(f"  {i:>2}. {wallet}")
-                report.append(f"     Tokens: {activity['tokens']}  Volume: ${activity['volume']:>12,.2f}")
-                tokens_preview = ", ".join([t[:8] + "..." for t in activity["tokens_list"][:5]])
-                report.append(f"     Tokens: {tokens_preview}")
-                report.append("")
-        
-        # New pairs
-        new_pairs = self.get_new_pairs(15)
-        if new_pairs:
-            report.append("\n[4] TRENDING NEW PAIRS")
-            report.append("-" * 55)
-            for i, pair in enumerate(new_pairs[:15], 1):
-                symbol = pair.get("baseToken", {}).get("symbol", "???")
-                address = pair.get("baseToken", {}).get("address", "")[:10] + "..."
-                vol = float(pair.get("volume", {}).get("h24", 0))
-                price = float(pair.get("priceUsd", 0))
-                mc = float(pair.get("fdv", 0))
-                txns = pair.get("txns", {}).get("h24", {}).get("buys", 0) + pair.get("txns", {}).get("h24", {}).get("sells", 0)
-                change = float(pair.get("priceChange", {}).get("h24", 0))
-                change_str = f"+{change:.1f}%" if change >= 0 else f"{change:.1f}%"
-                buys = pair.get("txns", {}).get("h24", {}).get("buys", 0)
-                sells = pair.get("txns", {}).get("h24", {}).get("sells", 0)
-                report.append(f"  {i:>2}. {symbol:<15} ({address})")
-                report.append(f"     Vol: ${vol:>12,.2f}  Price: ${price:>12.8f}  MC: ${mc:>12,.0f}")
-                report.append(f"     24h TXNs: {txns:>6,}  Buys: {buys:>6,}  Sells: {sells:>6,}  Chg: {change_str:>7}")
-                report.append("")
-        
-        report.append("=" * 70)
-        return "\n".join(report)
-    
+            print(f"Error fetching top wallets: {e}")
+            return []
+
+    def get_trending_new_pairs(self, limit=15):
+        """Get trending new pairs sorted by creation time."""
+        try:
+            tokens = self.get_pumpfun_tokens(limit=100)
+            pairs = []
+            for pair in tokens:
+                created = pair.get("pairCreatedAt", 0) or 0
+                if created > 0:
+                    pairs.append(pair)
+
+            pairs.sort(key=lambda x: x.get("pairCreatedAt", 0) or 0, reverse=True)
+            return pairs[:limit]
+        except Exception as e:
+            print(f"Error fetching trending pairs: {e}")
+            return []
+
+    def copy_wallet_address(self, wallet_address):
+        """Copy wallet address to clipboard (works on Windows)."""
+        try:
+            import subprocess
+            subprocess.run(["clip", "-input", wallet_address], shell=True, check=True)
+            return True
+        except Exception:
+            return False
+
+    def format_wallet_address(self, address):
+        """Format wallet address for easy copying with copy button."""
+        if not address or len(address) < 32:
+            return address
+        return f"[COPY] {address[:4]}...{address[-4:]}"
+
+    def print_top_tokens(self):
+        """Print top Solana tokens by 24h volume."""
+        print("\n" + "=" * 80)
+        print("🔥 TOP 15 SOLANA TOKENS BY 24H VOLUME")
+        print("=" * 80)
+        tokens = self.get_top_tokens(limit=15)
+
+        for i, pair in enumerate(tokens, 1):
+            base = pair.get("baseToken", {})
+            quote = pair.get("quoteToken", {})
+            price = pair.get("price", {}).get("usd", "0")
+            change_24h = pair.get("priceChange", {}).get("h24", 0) or 0
+            volume = pair.get("volume", {}).get("h24", 0) or 0
+            mcap = pair.get("mcap", 0) or 0
+            liquidity = pair.get("liquidity", {}).get("usd", 0) or 0
+            buys = pair.get("priceProgress", {}).get("24h", {}).get("buys", 0) or 0
+            sells = pair.get("priceProgress", {}).get("24h", {}).get("sells", 0) or 0
+
+            print(f"\n{i}. {base.get('name', 'N/A')} ({base.get('symbol', 'N/A')})")
+            print(f"   Address: {self.format_wallet_address(pair.get('baseMint', ''))}")
+            print(f"   Price: ${price} | 24h Change: {change_24h:+.2f}%")
+            print(f"   Vol: ${volume:,.0f} | MC: ${mcap:,.0f} | Liq: ${liquidity:,.0f}")
+            print(f"   Buys/Sells: {buys}/{sells}")
+
+    def print_top_creators(self):
+        """Print top pump.fun creators by volume."""
+        print("\n" + "=" * 80)
+        print("👑 TOP 15 PUMP.FUN CREATORS BY VOLUME")
+        print("=" * 80)
+        creators = self.get_top_pumpfun_creators(limit=15)
+
+        for i, (wallet, stats) in enumerate(creators, 1):
+            print(f"\n{i}. {self.format_wallet_address(wallet)}")
+            print(f"   Tokens: {stats['token_count']} | Total Vol: ${stats['total_volume']:,.0f}")
+            print(f"   Total MC: ${stats['total_mcap']:,.0f} | Total Liq: ${stats['total_liquidity']:,.0f}")
+            print(f"   Top Tokens:")
+            for token in stats["tokens"][:3]:
+                print(f"     - {token['name']} ({token['address'][:8]}...{token['address'][-6:]}) - MC: ${token['mcap']:,.0f}")
+
+    def print_top_wallets(self):
+        """Print top wallets by buy activity."""
+        print("\n" + "=" * 80)
+        print("🎯 TOP 20 WALLETS BY BUY ACTIVITY")
+        print("=" * 80)
+        wallets = self.get_top_wallets_by_buy_activity(limit=20)
+
+        for i, (wallet, stats) in enumerate(wallets, 1):
+            print(f"\n{i}. {self.format_wallet_address(wallet)}")
+            print(f"   Total Buys: {stats['total_buys']} | Total Volume: ${stats['total_volume']:,.0f}")
+            print(f"   Tokens Traded:")
+            for token in stats["tokens_traded"][:3]:
+                print(f"     - {token['name']} ({token['address'][:8]}...{token['address'][-6:]}) - Buys: {token['buys']}")
+
+    def print_trending_pairs(self):
+        """Print trending new pairs."""
+        print("\n" + "=" * 80)
+        print("🚀 TRENDING NEW PAIRS (BY CREATION TIME)")
+        print("=" * 80)
+        pairs = self.get_trending_new_pairs(limit=15)
+
+        for i, pair in enumerate(pairs, 1):
+            base = pair.get("baseToken", {})
+            price = pair.get("price", {}).get("usd", "0")
+            change_1h = pair.get("priceChange", {}).get("h1", 0) or 0
+            volume = pair.get("volume", {}).get("h24", 0) or 0
+            mcap = pair.get("mcap", 0) or 0
+            created = pair.get("pairCreatedAt", 0) or 0
+            created_str = datetime.fromtimestamp(created).strftime("%Y-%m-%d %H:%M") if created else "N/A"
+
+            print(f"\n{i}. {base.get('name', 'N/A')} ({base.get('symbol', 'N/A')})")
+            print(f"   Address: {self.format_wallet_address(pair.get('baseMint', ''))}")
+            print(f"   Price: ${price} | 1h Change: {change_1h:+.2f}%")
+            print(f"   Vol: ${volume:,.0f} | MC: ${mcap:,.0f}")
+            print(f"   Created: {created_str}")
+
     def run(self):
-        """Run tracker and print report"""
-        report = self.format_report()
-        print(report)
-        return report
+        """Run the full tracker."""
+        print("\n" + "█" * 80)
+        print("🔍 SOLANA WALLET TRACKER")
+        print(f"   Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("█" * 80)
+
+        self.print_top_tokens()
+        self.print_top_creators()
+        self.print_top_wallets()
+        self.print_trending_pairs()
+
+        print("\n" + "=" * 80)
+        print("💡 TIP: Click on a wallet address above to copy it to clipboard")
+        print("=" * 80)
 
 
 if __name__ == "__main__":
