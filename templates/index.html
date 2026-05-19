@@ -230,10 +230,10 @@
                         <li class="token-item">
                             <div class="token-name">{{ token.baseToken.name }}</div>
                             <div class="token-address">{{ token.baseToken.address }}</div>
-                            <div class="token-stats">
-                                <span class="stat">Volume 24h: <strong>${{ "{:,.2f}".format(float(token.volume.h24 or 0)) }}</strong></span>
-                                <span class="stat">Market Cap: <strong>${{ "{:,.2f}".format(float(token.marketCap or 0)) }}</strong></span>
-                                <span class="stat">Price: <strong>${{ "{:,.6f}".format(float(token.priceUsd or 0)) }}</strong></span>
+                             <div class="token-stats">
+                                <span class="stat">Volume 24h: <strong>${{ token.volume_h24 }}</strong></span>
+                                <span class="stat">Market Cap: <strong>${{ token.market_cap }}</strong></span>
+                                <span class="stat">Price: <strong>${{ token.price_usd }}</strong></span>
                             </div>
                         </li>
                         {% endfor %}

@@ -123,8 +123,17 @@ def update_data():
 
 @app.route("/")
 def index():
+    # Format numbers for display
+    formatted_tokens = []
+    for token in tracked_tokens:
+        formatted_token = dict(token)
+        formatted_token['volume_h24'] = "{:,.2f}".format(float(token.get('volume', {}).get('h24', 0) or 0))
+        formatted_token['market_cap'] = "{:,.2f}".format(float(token.get('marketCap', 0) or 0))
+        formatted_token['price_usd'] = "{:,.6f}".format(float(token.get('priceUsd', 0) or 0))
+        formatted_tokens.append(formatted_token)
+    
     return render_template("index.html", 
-                           tokens=tracked_tokens, 
+                           tokens=formatted_tokens, 
                            last_update=last_update,
                            tracked_wallets=tracked_wallets)
 
