@@ -3,10 +3,10 @@ import json
 import time
 import sys
 
-def fetch_with_retry(url, params=None, max_retries=3):
+def fetch_with_retry(url, params=None, headers=None, max_retries=3):
     for attempt in range(max_retries):
         try:
-            resp = requests.get(url, params=params, timeout=15)
+            resp = requests.get(url, params=params, headers=headers, timeout=15)
             if resp.status_code == 200:
                 return resp.json()
         except Exception as e:
@@ -14,79 +14,59 @@ def fetch_with_retry(url, params=None, max_retries=3):
                 time.sleep(2)
     return None
 
-def get_trending_meme_coins():
-    """Get trending meme coins from DexScreener"""
-    tokens = [
-        "So11111111111111111111111111111111111111112",
-        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    ]
-    all_pairs = []
-    for token in tokens:
-        url = f"https://api.dexscreener.com/latest/dex/tokens/{token}"
-        data = fetch_with_retry(url)
-        if data:
-            pairs = data.get("pairs", [])
-            all_pairs.extend(pairs)
-    
-    meme_coins = [p for p in all_pairs if "wrapped" not in p.get("baseToken", {}).get("name", "").lower()]
-    meme_coins.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
-    return meme_coins
-
-def get_birdeye_holders(token_address):
-    """Get top holders from Birdeye API"""
-    url = "https://api.birdeye.so/v1/defi/token_holders"
-    headers = {"X-Token": "demo"}  # Free tier demo key
-    params = {"mint": token_address}
+def get_trending_tokens():
+    """Get trending Solana tokens from DexScreener"""
+    url = "https://api.dexscreener.com/latest/dex/search"
+    params = {"chainId": "solana", "text": ""}
     data = fetch_with_retry(url, params=params)
-    if data:
-        return data.get("data", {}).get("items", [])
+    if data and data.get("pairs"):
+        pairs = [p for p in data["pairs"]
+                 if "wrapped" not in p.get("baseToken", {}).get("name", "").lower()
+                 and "solana" not in p.get("baseToken", {}).get("name", "").lower()
+                 and p.get("priceUsd", 0) > 0.001]
+        pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
+        return pairs[:20]
     return []
 
-def analyze_insiders(pairs, supply):
-    """Analyze top holders for insider behavior"""
+def get_top_traders(token_address):
+    """Get top traders from Birdeye API"""
+    url = "https://api.birdeye.so/v1/defi/token_top_traders"
+    headers = {"X-Token": "demo"}
+    params = {"address": token_address}
+    data = fetch_with_retry(url, params=params, headers=headers)
+    if data and data.get("data", {}).get("items"):
+        return data["data"]["items"]
+    return []
+
+def analyze_insiders(traders, token_address):
+    """Filter for insider wallets (small entries, huge PNL)"""
     insiders = []
-    
-    # Use the pair with highest volume
-    pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
-    if not pairs:
-        return []
-    
-    pair = pairs[0]
-    price_usd = pair.get("priceUsd", 0) or 0
-    
-    # Get top holders from DexScreener pair
-    top_holders = pair.get("topHolders", [])
-    
-    for holder in top_holders[:20]:
-        address = holder.get("address", "")
-        balance = holder.get("balance", 0) or 0
-        pct = (balance / supply * 100) if supply else 0
-        value = balance * price_usd if price_usd else 0
-        
-        if pct > 5:
+    for trader in traders:
+        pnl = trader.get("pnl", 0) or 0
+        entry_size = trader.get("entry_size", 0) or 0
+        if pnl > 1000 and entry_size < 10000:
             insiders.append({
-                "address": address,
-                "balance": balance,
-                "value_usd": value,
-                "percentage": pct
+                "address": trader.get("address", ""),
+                "pnl": pnl,
+                "entry_size": entry_size,
+                "total_trades": trader.get("total_trades", 0) or 0
             })
-    
-    return sorted(insiders, key=lambda x: x["percentage"], reverse=True)
+    return sorted(insiders, key=lambda x: x["pnl"], reverse=True)
 
 def print_results():
     print("=" * 100)
     print("SOLANA INSIDER WALLET TRACKER - DexScreener Trending Meme Coins (24h)")
     print("=" * 100)
-    
-    trending = get_trending_meme_coins()
-    
+
+    trending = get_trending_tokens()
+
     if not trending:
         print("No trending meme coins found. Check your internet connection.")
         return
-    
+
     print(f"\n{'#':<3} {'Token':<25} {'Address':<44} {'Vol 24h':<15} {'MC':<15}")
     print("-" * 100)
-    
+
     for i, pair in enumerate(trending[:15], 1):
         base = pair.get("baseToken", {})
         name = base.get("name", "Unknown")
@@ -94,31 +74,31 @@ def print_results():
         vol = pair.get("volume", {}).get("h24", 0) or 0
         mc = pair.get("marketCap", 0) or pair.get("fdv", 0) or 0
         print(f"{i:<3} {name:<25} {address:<44} ${vol:>12,.2f}  ${mc:>12,.2f}")
-    
+
     print(f"\n{'='*100}")
-    print("INSIDER WALLET ANALYSIS (Top Holders >5% Supply)")
+    print("INSIDER WALLET ANALYSIS (Top Traders with Small Entries, Huge PNL)")
     print(f"{'='*100}\n")
-    
+
     for pair in trending[:5]:
         base = pair.get("baseToken", {})
         token_address = base.get("address", "")
         token_name = base.get("name", "Unknown")
-        supply = pair.get("supply", 1) or 1
-        
+
         print(f"Token: {token_name}")
         print(f"Address: {token_address}")
         print()
-        
-        insiders = analyze_insiders([pair], supply)
-        
+
+        traders = get_top_traders(token_address)
+        insiders = analyze_insiders(traders, token_address)
+
         if insiders:
-            print(f"{'Address':<44} {'Balance':<15} {'Value USD':<15} {'% Supply':<10}")
+            print(f"{'Address':<44} {'PNL':<15} {'Entry Size':<15} {'Trades':<10}")
             print("-" * 85)
             for insider in insiders:
-                print(f"{insider['address']:<44} {insider['balance']:>15,.0f}  ${insider['value_usd']:>12,.2f}  {insider['percentage']:>7.2f}%")
+                print(f"{insider['address']:<44} ${insider['pnl']:>12,.2f}  ${insider['entry_size']:>12,.2f}  {insider['total_trades']:>10}")
         else:
             print("No significant insider wallets found.\n")
-        
+
         print()
 
 if __name__ == "__main__":
