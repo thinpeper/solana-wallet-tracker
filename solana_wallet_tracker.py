@@ -15,18 +15,43 @@ def fetch_with_retry(url, params=None, headers=None, max_retries=3):
     return None
 
 def get_trending_tokens():
-    """Get trending Solana tokens from DexScreener"""
-    url = "https://api.dexscreener.com/latest/dex/search"
-    params = {"chainId": "solana", "text": ""}
-    data = fetch_with_retry(url, params=params)
-    if data and data.get("pairs"):
-        pairs = [p for p in data["pairs"]
-                 if "wrapped" not in p.get("baseToken", {}).get("name", "").lower()
-                 and "solana" not in p.get("baseToken", {}).get("name", "").lower()
-                 and p.get("priceUsd", 0) > 0.001]
-        pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
-        return pairs[:20]
-    return []
+    """Get trending Solana tokens from DexScreener using known token addresses"""
+    # Query multiple known tokens to get their pairs
+    tokens = [
+        "So11111111111111111111111111111111111111112",  # Wrapped SOL
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+        "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",  # JUP
+        "7vfCXTUXx5WJV5JALh7Ha7vQE5y5JAHSGtqcR3dJW8Mq",  # BONK
+        "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK (another)
+        "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",  # WIF
+        "6p6xgHyF7AeE6TZkSmFsko444wqoP15icng6G7ScfnB1",  # ORCA
+        "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",  # RAY
+        "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",  # mSOL
+    ]
+    
+    all_pairs = []
+    seen_addresses = set()
+    
+    for token in tokens:
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{token}"
+        data = fetch_with_retry(url)
+        if data and data.get("pairs"):
+            for pair in data["pairs"]:
+                addr = pair.get("baseToken", {}).get("address", "")
+                if addr and addr not in seen_addresses:
+                    seen_addresses.add(addr)
+                    all_pairs.append(pair)
+    
+    # Filter out Wrapped SOL and stablecoins
+    meme_coins = [p for p in all_pairs 
+                  if "wrapped" not in p.get("baseToken", {}).get("name", "").lower()
+                  and "solana" not in p.get("baseToken", {}).get("name", "").lower()
+                  and p.get("priceUsd", 0) > 0.001
+                  and (p.get("volume", {}).get("h24", 0) or 0) > 1000]
+    
+    meme_coins.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
+    return meme_coins[:20]
 
 def get_top_traders(token_address):
     """Get top traders from Birdeye API"""
