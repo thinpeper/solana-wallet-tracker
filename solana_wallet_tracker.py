@@ -1,5 +1,17 @@
 import requests
 import json
+import time
+
+def fetch_with_retry(url, params=None, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(url, params=params, timeout=15)
+            return resp.json()
+        except Exception as e:
+            print(f"Attempt {attempt+1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2)
+    return None
 
 def get_trending_tokens():
     """Get trending tokens from DexScreener"""
@@ -9,27 +21,21 @@ def get_trending_tokens():
         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     ]
     params = {"tokens": tokens}
-    try:
-        resp = requests.get(url, params=params, timeout=10)
-        data = resp.json()
+    data = fetch_with_retry(url, params)
+    if data:
         return data.get("pairs", [])
-    except Exception as e:
-        print(f"Error fetching trending: {e}")
-        return []
+    return []
 
 def get_token_details(token_address):
     """Get detailed token info including top holders"""
     url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-    try:
-        resp = requests.get(url, timeout=10)
-        data = resp.json()
+    data = fetch_with_retry(url)
+    if data:
         pairs = data.get("pairs", [])
-        if not pairs:
-            return None
-        pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0), reverse=True)
-        return pairs[0]
-    except:
-        return None
+        if pairs:
+            pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0), reverse=True)
+            return pairs[0]
+    return None
 
 def analyze_insiders(pair):
     """Analyze top holders for insider behavior"""
@@ -45,7 +51,6 @@ def analyze_insiders(pair):
         pct = (balance / supply * 100) if supply else 0
         value = balance * price_usd if price_usd else 0
         
-        # Flag as insider if holding >5% of supply
         if pct > 5:
             insiders.append({
                 "address": address,
@@ -62,6 +67,10 @@ def print_results():
     print("=" * 100)
     
     trending = get_trending_tokens()
+    
+    if not trending:
+        print("No trending tokens found. Check your internet connection.")
+        return
     
     print(f"\n{'#':<3} {'Token':<25} {'Address':<44} {'Vol 24h':<15} {'MC':<15}")
     print("-" * 100)
