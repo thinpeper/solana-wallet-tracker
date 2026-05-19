@@ -29,21 +29,18 @@ def get_trending_meme_coins():
             pairs = data.get("pairs", [])
             all_pairs.extend(pairs)
     
-    # Filter out wrapped tokens, sort by volume
     meme_coins = [p for p in all_pairs if "wrapped" not in p.get("baseToken", {}).get("name", "").lower()]
     meme_coins.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
     return meme_coins
 
-def get_token_details(token_address):
-    """Get detailed token info including top holders"""
-    url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-    data = fetch_with_retry(url)
+def get_token_holders(token_address):
+    """Get top holders from DexScreener search"""
+    url = "https://api.dexscreener.com/token-approval-book/latest/dex/tokens"
+    params = {"tokens": [token_address]}
+    data = fetch_with_retry(url, params=params)
     if data:
-        pairs = data.get("pairs", [])
-        if pairs:
-            pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0), reverse=True)
-            return pairs[0]
-    return None
+        return data.get("pairs", [])
+    return []
 
 def analyze_insiders(pair):
     """Analyze top holders for insider behavior"""
@@ -100,9 +97,11 @@ def print_results():
         token_address = base.get("address", "")
         token_name = base.get("name", "Unknown")
         
-        details = get_token_details(token_address)
-        if not details:
-            continue
+        holders = get_token_holders(token_address)
+        if holders:
+            details = holders[0]
+        else:
+            details = pair
         
         print(f"Token: {token_name}")
         print(f"Address: {token_address}")
