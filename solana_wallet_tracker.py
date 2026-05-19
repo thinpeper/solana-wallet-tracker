@@ -1,30 +1,37 @@
 import requests
 import json
 import time
+import sys
 
-def fetch_with_retry(url, params=None, max_retries=3):
+def fetch_with_retry(url, max_retries=3):
     for attempt in range(max_retries):
         try:
-            resp = requests.get(url, params=params, timeout=15)
-            return resp.json()
+            resp = requests.get(url, timeout=15)
+            if resp.status_code == 200:
+                return resp.json()
         except Exception as e:
-            print(f"Attempt {attempt+1} failed: {e}")
+            print(f"Attempt {attempt+1} failed: {e}", file=sys.stderr)
             if attempt < max_retries - 1:
                 time.sleep(2)
     return None
 
 def get_trending_tokens():
     """Get trending tokens from DexScreener"""
-    url = "https://api.dexscreener.com/latest/dex/tokens"
     tokens = [
         "So11111111111111111111111111111111111111112",
         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     ]
-    params = {"tokens": tokens}
-    data = fetch_with_retry(url, params)
-    if data:
-        return data.get("pairs", [])
-    return []
+    all_pairs = []
+    for token in tokens:
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{token}"
+        data = fetch_with_retry(url)
+        if data:
+            pairs = data.get("pairs", [])
+            all_pairs.extend(pairs)
+    
+    # Sort by 24h volume
+    all_pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
+    return all_pairs
 
 def get_token_details(token_address):
     """Get detailed token info including top holders"""
