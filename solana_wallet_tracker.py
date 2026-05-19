@@ -15,8 +15,8 @@ def fetch_with_retry(url, max_retries=3):
                 time.sleep(2)
     return None
 
-def get_trending_tokens():
-    """Get trending tokens from DexScreener"""
+def get_trending_meme_coins():
+    """Get trending meme coins from DexScreener"""
     tokens = [
         "So11111111111111111111111111111111111111112",
         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
@@ -29,9 +29,10 @@ def get_trending_tokens():
             pairs = data.get("pairs", [])
             all_pairs.extend(pairs)
     
-    # Sort by 24h volume
-    all_pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
-    return all_pairs
+    # Filter out wrapped tokens, sort by volume
+    meme_coins = [p for p in all_pairs if "wrapped" not in p.get("baseToken", {}).get("name", "").lower()]
+    meme_coins.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
+    return meme_coins
 
 def get_token_details(token_address):
     """Get detailed token info including top holders"""
@@ -70,13 +71,13 @@ def analyze_insiders(pair):
 
 def print_results():
     print("=" * 100)
-    print("SOLANA INSIDER WALLET TRACKER - DexScreener Trending (24h)")
+    print("SOLANA INSIDER WALLET TRACKER - DexScreener Trending Meme Coins (24h)")
     print("=" * 100)
     
-    trending = get_trending_tokens()
+    trending = get_trending_meme_coins()
     
     if not trending:
-        print("No trending tokens found. Check your internet connection.")
+        print("No trending meme coins found. Check your internet connection.")
         return
     
     print(f"\n{'#':<3} {'Token':<25} {'Address':<44} {'Vol 24h':<15} {'MC':<15}")
