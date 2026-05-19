@@ -3,10 +3,10 @@ import json
 import time
 import sys
 
-def fetch_with_retry(url, max_retries=3):
+def fetch_with_retry(url, params=None, max_retries=3):
     for attempt in range(max_retries):
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, params=params, timeout=15)
             if resp.status_code == 200:
                 return resp.json()
         except Exception as e:
