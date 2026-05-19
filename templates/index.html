@@ -231,9 +231,9 @@
                             <div class="token-name">{{ token.baseToken.name }}</div>
                             <div class="token-address">{{ token.baseToken.address }}</div>
                             <div class="token-stats">
-                                <span class="stat">Volume 24h: <strong>${{ "{:,.2f}".format(token.volume.h24 or 0) }}</strong></span>
-                                <span class="stat">Market Cap: <strong>${{ "{:,.2f}".format(token.marketCap or 0) }}</strong></span>
-                                <span class="stat">Price: <strong>${{ "{:,.6f}".format(token.priceUsd or 0) }}</strong></span>
+                                <span class="stat">Volume 24h: <strong>${{ "{:,.2f}".format(float(token.volume.h24 or 0)) }}</strong></span>
+                                <span class="stat">Market Cap: <strong>${{ "{:,.2f}".format(float(token.marketCap or 0)) }}</strong></span>
+                                <span class="stat">Price: <strong>${{ "{:,.6f}".format(float(token.priceUsd or 0)) }}</strong></span>
                             </div>
                         </li>
                         {% endfor %}
