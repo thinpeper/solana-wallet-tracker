@@ -47,8 +47,8 @@ def get_trending_tokens():
     meme_coins = [p for p in all_pairs 
                   if "wrapped" not in p.get("baseToken", {}).get("name", "").lower()
                   and "solana" not in p.get("baseToken", {}).get("name", "").lower()
-                  and p.get("priceUsd", 0) > 0.001
-                  and (p.get("volume", {}).get("h24", 0) or 0) > 1000]
+                  and float(p.get("priceUsd", 0) or 0) > 0.001
+                  and float(p.get("volume", {}).get("h24", 0) or 0) > 1000]
     
     meme_coins.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
     return meme_coins[:20]
