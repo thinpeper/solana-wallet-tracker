@@ -10,7 +10,6 @@ def fetch_with_retry(url, params=None, max_retries=3):
             if resp.status_code == 200:
                 return resp.json()
         except Exception as e:
-            print(f"Attempt {attempt+1} failed: {e}", file=sys.stderr)
             if attempt < max_retries - 1:
                 time.sleep(2)
     return None
@@ -33,22 +32,30 @@ def get_trending_meme_coins():
     meme_coins.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
     return meme_coins
 
-def get_token_holders(token_address):
-    """Get top holders from DexScreener search"""
-    url = "https://api.dexscreener.com/token-approval-book/latest/dex/tokens"
-    params = {"tokens": [token_address]}
+def get_birdeye_holders(token_address):
+    """Get top holders from Birdeye API"""
+    url = "https://api.birdeye.so/v1/defi/token_holders"
+    headers = {"X-Token": "demo"}  # Free tier demo key
+    params = {"mint": token_address}
     data = fetch_with_retry(url, params=params)
     if data:
-        return data.get("pairs", [])
+        return data.get("data", {}).get("items", [])
     return []
 
-def analyze_insiders(pair):
+def analyze_insiders(pairs, supply):
     """Analyze top holders for insider behavior"""
-    top_holders = pair.get("topHolders", [])
     insiders = []
     
-    supply = pair.get("supply", 1) or 1
+    # Use the pair with highest volume
+    pairs.sort(key=lambda x: x.get("volume", {}).get("h24", 0) or 0, reverse=True)
+    if not pairs:
+        return []
+    
+    pair = pairs[0]
     price_usd = pair.get("priceUsd", 0) or 0
+    
+    # Get top holders from DexScreener pair
+    top_holders = pair.get("topHolders", [])
     
     for holder in top_holders[:20]:
         address = holder.get("address", "")
@@ -96,18 +103,13 @@ def print_results():
         base = pair.get("baseToken", {})
         token_address = base.get("address", "")
         token_name = base.get("name", "Unknown")
-        
-        holders = get_token_holders(token_address)
-        if holders:
-            details = holders[0]
-        else:
-            details = pair
+        supply = pair.get("supply", 1) or 1
         
         print(f"Token: {token_name}")
         print(f"Address: {token_address}")
         print()
         
-        insiders = analyze_insiders(details)
+        insiders = analyze_insiders([pair], supply)
         
         if insiders:
             print(f"{'Address':<44} {'Balance':<15} {'Value USD':<15} {'% Supply':<10}")
